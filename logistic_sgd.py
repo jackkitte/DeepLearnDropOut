@@ -47,6 +47,7 @@ class LogisticRegression(object):
 
         # compute vector of class-membership probabilities in symbolic form
         self.p_y_given_x = T.nnet.softmax(T.dot(input, self.W) + self.b)
+        #self.p_y_given_x = T.nnet.sigmoid(T.dot(input, self.W) + self.b)
 
         # compute prediction as class whose probability is maximal in
         # symbolic form
@@ -55,7 +56,7 @@ class LogisticRegression(object):
         # parameters of the model
         self.params = [self.W, self.b]
 
-    def negative_log_likelihood(self, y):
+    def negative_log_likelihood(self, y, batch_size):
         """Return the mean of the negative log-likelihood of the prediction
         of this model under a given target distribution.
 
@@ -83,6 +84,8 @@ class LogisticRegression(object):
         # the mean (across minibatch examples) of the elements in v,
         # i.e., the mean log-likelihood across the minibatch.
         return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        #return -T.sum((T.log(self.p_y_given_x) * y) + (T.log(self.p_y_given_x) * (1 - y)))
+        #return T.sum((self.p_y_given_x - y)**2) / (2 * batch_size)
 
     def errors(self, y):
         """Return a float representing the number of errors in the minibatch ;
@@ -101,7 +104,7 @@ class LogisticRegression(object):
         if y.dtype.startswith('int'):
             # the T.neq operator returns a vector of 0s and 1s, where 1
             # represents a mistake in prediction
-            return T.sum(T.neq(self.y_pred, y))
+            return T.mean(T.neq(self.y_pred, y))
         else:
             raise NotImplementedError()
 

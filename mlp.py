@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.io as sio
 import cPickle
 import gzip
 import os
@@ -41,7 +42,7 @@ class HiddenLayer(object):
         self.activation = activation
 
         if W is None:
-            W_values = np.asarray(0.01 * rng.standard_normal(
+            W_values = np.asarray(rng.uniform(
                 size=(n_in, n_out)), dtype=theano.config.floatX)
             W = theano.shared(value=W_values, name='W')
         
@@ -197,14 +198,13 @@ def test_mlp(
     mom_epoch_interval = mom_params["interval"]
     
     
-    datasets = load_mnist(dataset)
+    datasets = load_umontreal_data(dataset)
     train_set_x, train_set_y = datasets[0]
-    valid_set_x, valid_set_y = datasets[1]
-    test_set_x, test_set_y = datasets[2]
+    test_set_x, test_set_y = datasets[1]
+    test_set_matrix_Y, train_set_matrix_Y = datasets[2]
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
-    n_valid_batches = valid_set_x.get_value(borrow=True).shape[0] / batch_size
     n_test_batches = test_set_x.get_value(borrow=True).shape[0] / batch_size
 
     ######################
@@ -218,7 +218,8 @@ def test_mlp(
     epoch = T.scalar()
     x = T.matrix('x')  # the data is presented as rasterized images
     y = T.ivector('y')  # the labels are presented as 1D vector of
-                        # [int] labels
+    y_matrix = T.matrix('y_matrix') # [int] labels
+
     learning_rate = theano.shared(np.asarray(initial_learning_rate,
         dtype=theano.config.floatX))
 
@@ -232,8 +233,10 @@ def test_mlp(
                      use_bias=use_bias)
 
     # Build the expresson for the cost function.
-    cost = classifier.negative_log_likelihood(y)
-    dropout_cost = classifier.dropout_negative_log_likelihood(y)
+    #cost = classifier.negative_log_likelihood(y_matrix, batch_size)
+    cost = classifier.negative_log_likelihood(y, batch_size)
+    #dropout_cost = classifier.dropout_negative_log_likelihood(y_matrix, batch_size)
+    dropout_cost = classifier.dropout_negative_log_likelihood(y, batch_size)
 
     # Compile theano function for testing.
     test_model = theano.function(inputs=[index],
@@ -241,15 +244,16 @@ def test_mlp(
             givens={
                 x: test_set_x[index * batch_size:(index + 1) * batch_size],
                 y: test_set_y[index * batch_size:(index + 1) * batch_size]})
+
+    train_error_model = theano.function(inputs=[index],
+            outputs=classifier.errors(y),
+            givens={
+                x: train_set_x[index * batch_size:(index + 1) * batch_size],
+                y: train_set_y[index * batch_size:(index + 1) * batch_size]})
+
     #theano.printing.pydotprint(test_model, outfile="test_file.png",
     #        var_with_name_simple=True)
 
-    # Compile theano function for validation.
-    validate_model = theano.function(inputs=[index],
-            outputs=classifier.errors(y),
-            givens={
-                x: valid_set_x[index * batch_size:(index + 1) * batch_size],
-                y: valid_set_y[index * batch_size:(index + 1) * batch_size]})
     #theano.printing.pydotprint(validate_model, outfile="validate_file.png",
     #        var_with_name_simple=True)
 
@@ -268,54 +272,59 @@ def test_mlp(
         gparams_mom.append(gparam_mom)
 
     # Compute momentum for the current epoch
-    mom = ifelse(epoch < mom_epoch_interval,
-            mom_start*(1.0 - epoch/mom_epoch_interval) + mom_end*(epoch/mom_epoch_interval),
-            mom_end)
+    #mom = ifelse(epoch < mom_epoch_interval,
+    #        mom_start*(1.0 - epoch/mom_epoch_interval) + mom_end*(epoch/mom_epoch_interval),
+    #        mom_end)
 
     # Update the step direction using momentum
-    updates = OrderedDict()
-    for gparam_mom, gparam in zip(gparams_mom, gparams):
-        # Misha Denil's original version
-        #updates[gparam_mom] = mom * gparam_mom + (1. - mom) * gparam
-      
-        # change the update rule to match Hinton's dropout paper
-        updates[gparam_mom] = mom * gparam_mom - (1. - mom) * learning_rate * gparam
+    updates = [
+            (param, param - learning_rate * gparam)
+            for param, gparam in zip(classifier.params, gparams)
+    ]
+    #updates = OrderedDict()
+    #for gparam_mom, gparam in zip(gparams_mom, gparams):
+    #    # Misha Denil's original version
+    #    #updates[gparam_mom] = mom * gparam_mom + (1. - mom) * gparam
+    #  
+    #    # change the update rule to match Hinton's dropout paper
+    #    updates[gparam_mom] = mom * gparam_mom - (1. - mom) * learning_rate * gparam
 
-    # ... and take a step along that direction
-    for param, gparam_mom in zip(classifier.params, gparams_mom):
-        # Misha Denil's original version
-        #stepped_param = param - learning_rate * updates[gparam_mom]
-        
-        # since we have included learning_rate in gparam_mom, we don't need it
-        # here
-        stepped_param = param + updates[gparam_mom]
+    ## ... and take a step along that direction
+    #for param, gparam_mom in zip(classifier.params, gparams_mom):
+    #    # Misha Denil's original version
+    #    #stepped_param = param - learning_rate * updates[gparam_mom]
+    #    
+    #    # since we have included learning_rate in gparam_mom, we don't need it
+    #    # here
+    #    stepped_param = param + updates[gparam_mom]
 
-        # This is a silly hack to constrain the norms of the rows of the weight
-        # matrices.  This just checks if there are two dimensions to the
-        # parameter and constrains it if so... maybe this is a bit silly but it
-        # should work for now.
-        if param.get_value(borrow=True).ndim == 2:
-            #squared_norms = T.sum(stepped_param**2, axis=1).reshape((stepped_param.shape[0],1))
-            #scale = T.clip(T.sqrt(squared_filter_length_limit / squared_norms), 0., 1.)
-            #updates[param] = stepped_param * scale
-            
-            # constrain the norms of the COLUMNs of the weight, according to
-            # https://github.com/BVLC/caffe/issues/109
-            col_norms = T.sqrt(T.sum(T.sqr(stepped_param), axis=0))
-            desired_norms = T.clip(col_norms, 0, T.sqrt(squared_filter_length_limit))
-            scale = desired_norms / (1e-7 + col_norms)
-            updates[param] = stepped_param * scale
-        else:
-            updates[param] = stepped_param
+    #    # This is a silly hack to constrain the norms of the rows of the weight
+    #    # matrices.  This just checks if there are two dimensions to the
+    #    # parameter and constrains it if so... maybe this is a bit silly but it
+    #    # should work for now.
+    #    if param.get_value(borrow=True).ndim == 2:
+    #        #squared_norms = T.sum(stepped_param**2, axis=1).reshape((stepped_param.shape[0],1))
+    #        #scale = T.clip(T.sqrt(squared_filter_length_limit / squared_norms), 0., 1.)
+    #        #updates[param] = stepped_param * scale
+    #        
+    #        # constrain the norms of the COLUMNs of the weight, according to
+    #        # https://github.com/BVLC/caffe/issues/109
+    #        col_norms = T.sqrt(T.sum(T.sqr(stepped_param), axis=0))
+    #        desired_norms = T.clip(col_norms, 0, T.sqrt(squared_filter_length_limit))
+    #        scale = desired_norms / (1e-7 + col_norms)
+    #        updates[param] = stepped_param * scale
+    #    else:
+    #        updates[param] = stepped_param
 
 
     # Compile theano function for training.  This returns the training cost and
     # updates the model parameters.
     output = dropout_cost if dropout else cost
-    train_model = theano.function(inputs=[epoch, index], outputs=output,
+    train_model = theano.function(inputs=[index], outputs=output,
             updates=updates,
             givens={
                 x: train_set_x[index * batch_size:(index + 1) * batch_size],
+                #y_matrix: train_set_matrix_Y[index * batch_size:(index + 1) * batch_size]})
                 y: train_set_y[index * batch_size:(index + 1) * batch_size]})
     #theano.printing.pydotprint(train_model, outfile="train_file.png",
     #        var_with_name_simple=True)
@@ -323,8 +332,8 @@ def test_mlp(
     # Theano function to decay the learning rate, this is separate from the
     # training function because we only want to do this once each epoch instead
     # of after each minibatch.
-    decay_learning_rate = theano.function(inputs=[], outputs=learning_rate,
-            updates={learning_rate: learning_rate * learning_rate_decay})
+    #decay_learning_rate = theano.function(inputs=[], outputs=learning_rate,
+    #        updates={learning_rate: learning_rate * learning_rate_decay})
 
     ###############
     # TRAIN MODEL #
@@ -332,44 +341,50 @@ def test_mlp(
     print '... training'
 
     best_params = None
-    best_validation_errors = np.inf
+    best_test_errors = np.inf
     best_iter = 0
-    test_score = 0.
     epoch_counter = 0
-    start_time = time.clock()
+    start_time = time.time()
+    error_matrix = np.zeros([n_epochs, 3])
 
-    results_file = open(results_file_name, 'wb')
+    #results_file = open(results_file_name, 'wb')
 
     while epoch_counter < n_epochs:
         # Train this epoch
         epoch_counter = epoch_counter + 1
         for minibatch_index in xrange(n_train_batches):
-            minibatch_avg_cost = train_model(epoch_counter, minibatch_index)
+            minibatch_avg_cost = train_model(minibatch_index)
 
         # Compute loss on validation set
-        validation_losses = [validate_model(i) for i in xrange(n_valid_batches)]
-        this_validation_errors = np.sum(validation_losses)
+        test_losses = [test_model(i) for i in xrange(n_test_batches)]
+        train_losses = [train_error_model(i) for i in xrange(n_train_batches)]
+        this_test_errors = np.mean(test_losses)
+        this_train_errors = np.mean(train_losses)
 
         # Report and save progress.
-        print "epoch {}, test error {}, learning_rate={}{}".format(
-                epoch_counter, this_validation_errors,
+        print "epoch {}, test error {}, train error {}, train cost {}, learning_rate={}{}".format(
+                epoch_counter, this_test_errors, this_train_errors, minibatch_avg_cost,
                 learning_rate.get_value(borrow=True),
-                " **" if this_validation_errors < best_validation_errors else "")
+                " **" if this_test_errors < best_test_errors else "")
+        error_matrix[epoch_counter - 1] = epoch_counter, this_test_errors, this_train_errors
 
-        best_validation_errors = min(best_validation_errors,
-                this_validation_errors)
-        results_file.write("{0}\n".format(this_validation_errors))
-        results_file.flush()
+        if this_test_errors < best_test_errors :
+            best_test_errors = this_test_errors
+            best_iter = epoch_counter
 
-        new_learning_rate = decay_learning_rate()
+        #results_file.write("{0}\n".format(this_test_errors))
+        #results_file.flush()
 
-    end_time = time.clock()
-    print(('Optimization complete. Best validation score of %f %% '
-           'obtained at iteration %i, with test performance %f %%') %
-          (best_validation_errors * 100., best_iter, test_score * 100.))
+        #new_learning_rate = decay_learning_rate()
+
+    end_time = time.time()
+    print(('Optimization complete. Best test score of %f %% '
+           'obtained at iteration %i') %
+          (best_test_errors * 100., best_iter))
     print >> sys.stderr, ('The code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
+    sio.savemat(results_file_name, {'error_matrix':error_matrix, 'best_test_errors':best_test_errors * 100., 'best_iter':best_iter, 'elapsed_time':(end_time - start_time) / 60.})
 
 
 if __name__ == '__main__':
@@ -380,23 +395,24 @@ if __name__ == '__main__':
     # and generating the dropout masks for each mini-batch
     random_seed = 1234
 
-    initial_learning_rate = 1.0
+    initial_learning_rate = 0.5
     learning_rate_decay = 0.998
     squared_filter_length_limit = 15.0
-    n_epochs = 3000
+    n_epochs = 10000
     batch_size = 100
-    layer_sizes = [ 28*28, 1200, 1200, 10 ]
+    layer_sizes = [ 647, 500, 30 ]
+    dropout_hidden_rate = np.float64(sys.argv[3])
     
     # dropout rate for each layer
-    dropout_rates = [ 0.2, 0.5, 0.5 ]
+    dropout_rates = [ 0, dropout_hidden_rate ]
     # activation functions for each layer
     # For this demo, we don't need to set the activation functions for the 
     # on top layer, since it is always 10-way Softmax
-    activations = [ ReLU, ReLU ]
+    activations = [ Tanh ]
     
     #### the params for momentum
-    mom_start = 0.5
-    mom_end = 0.99
+    mom_start = 0.000001
+    mom_end = 0.00001
     # for epoch in [0, mom_epoch_interval], the momentum increases linearly
     # from mom_start to mom_end. After mom_epoch_interval, it stay at mom_end
     mom_epoch_interval = 500
@@ -404,24 +420,26 @@ if __name__ == '__main__':
                   "end": mom_end,
                   "interval": mom_epoch_interval}
                   
-    dataset = 'data/mnist_batches.npz'
+    dataset = 'VisionHogFeatures.mat'
     #dataset = 'data/mnist.pkl.gz'
+    results_file_name = sys.argv[2]
 
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 4:
         print "Usage: {0} [dropout|backprop]".format(sys.argv[0])
         exit(1)
 
     elif sys.argv[1] == "dropout":
         dropout = True
-        results_file_name = "results_dropout.txt"
+        #results_file_name = "results_dropout.txt"
 
     elif sys.argv[1] == "backprop":
         dropout = False
-        results_file_name = "results_backprop.txt"
+        #results_file_name = "results_backprop.txt"
 
     else:
         print "I don't know how to '{0}'".format(sys.argv[1])
         exit(1)
+    
 
     test_mlp(initial_learning_rate=initial_learning_rate,
              learning_rate_decay=learning_rate_decay,
