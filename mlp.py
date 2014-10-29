@@ -204,8 +204,10 @@ def test_mlp(
     test_set_matrix_Y, train_set_matrix_Y = datasets[2]
 
     # compute number of minibatches for training, validation and testing
-    n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
-    n_test_batches = test_set_x.get_value(borrow=True).shape[0] / batch_size
+    number_of_train_set = train_set_x.get_value(borrow=True).shape[0]
+    number_of_test_set = test_set_x.get_value(borrow=True).shape[0]
+    n_train_batches = number_of_train_set / batch_size
+    n_test_batches = number_of_test_set / batch_size
 
     ######################
     # BUILD ACTUAL MODEL #
@@ -345,7 +347,7 @@ def test_mlp(
     best_iter = 0
     epoch_counter = 0
     start_time = time.time()
-    error_matrix = np.zeros([n_epochs, 3])
+    error_matrix = np.zeros([n_epochs, 4])
 
     #results_file = open(results_file_name, 'wb')
 
@@ -358,15 +360,17 @@ def test_mlp(
         # Compute loss on validation set
         test_losses = [test_model(i) for i in xrange(n_test_batches)]
         train_losses = [train_error_model(i) for i in xrange(n_train_batches)]
-        this_test_errors = np.mean(test_losses)
-        this_train_errors = np.mean(train_losses)
+        test_losses_sum = np.sum(test_losses)
+        train_losses_sum = np.sum(train_losses)
+        this_test_errors = test_losses_sum / float(number_of_test_set)
+        this_train_errors = train_losses_sum / float(number_of_train_set)
 
         # Report and save progress.
         print "epoch {}, test error {}, train error {}, train cost {}, learning_rate={}{}".format(
                 epoch_counter, this_test_errors, this_train_errors, minibatch_avg_cost,
                 learning_rate.get_value(borrow=True),
                 " **" if this_test_errors < best_test_errors else "")
-        error_matrix[epoch_counter - 1] = epoch_counter, this_test_errors, this_train_errors
+        error_matrix[epoch_counter - 1] = epoch_counter, this_train_errors, this_test_errors, minibatch_avg_cost 
 
         if this_test_errors < best_test_errors :
             best_test_errors = this_test_errors
