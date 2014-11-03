@@ -14,7 +14,7 @@ import theano.printing
 import theano.tensor.shared_randomstreams
 
 from logistic_sgd import LogisticRegression
-from load_data import load_umontreal_data, load_mnist
+from load_data import load_umontreal_data, load_mnist, load_initial_params_data
 
 
 ##################################
@@ -100,7 +100,9 @@ class MLP(object):
             layer_sizes,
             dropout_rates,
             activations,
-            use_bias=True):
+            use_bias=True,
+            initial_params=None,
+            use_initial_params=False):
 
         #rectified_linear_activation = lambda x: T.maximum(0.0, x)
 
@@ -114,11 +116,19 @@ class MLP(object):
         next_dropout_layer_input = _dropout_from_layer(rng, input, p=dropout_rates[0])
         layer_counter = 0        
         for n_in, n_out in weight_matrix_sizes[:-1]:
-            next_dropout_layer = DropoutHiddenLayer(rng=rng,
-                    input=next_dropout_layer_input,
-                    activation=activations[layer_counter],
-                    n_in=n_in, n_out=n_out, use_bias=use_bias,
-                    dropout_rate=dropout_rates[layer_counter + 1])
+            if use_initial_params :
+                next_dropout_layer = DropoutHiddenLayer(rng=rng,
+                        input=next_dropout_layer_input,
+                        activation=activations[layer_counter],
+                        W=initial_params[layer_counter],
+                        n_in=n_in, n_out=n_out, use_bias=use_bias,
+                        dropout_rate=dropout_rates[layer_counter + 1])
+            else :
+                next_dropout_layer = DropoutHiddenLayer(rng=rng,
+                        input=next_dropout_layer_input,
+                        activation=activations[layer_counter],
+                        n_in=n_in, n_out=n_out, use_bias=use_bias,
+                        dropout_rate=dropout_rates[layer_counter + 1])
             self.dropout_layers.append(next_dropout_layer)
             next_dropout_layer_input = next_dropout_layer.output
 
@@ -139,9 +149,15 @@ class MLP(object):
         
         # Set up the output layer
         n_in, n_out = weight_matrix_sizes[-1]
-        dropout_output_layer = LogisticRegression(
-                input=next_dropout_layer_input,
-                n_in=n_in, n_out=n_out)
+        if use_initial_params :
+            dropout_output_layer = LogisticRegression(
+                    input=next_dropout_layer_input,
+                    W=initial_params[-1],
+                    n_in=n_in, n_out=n_out)
+        else :
+            dropout_output_layer = LogisticRegression(
+                    input=next_dropout_layer_input,
+                    n_in=n_in, n_out=n_out)
         self.dropout_layers.append(dropout_output_layer)
 
         # Again, reuse paramters in the dropout output.
@@ -179,6 +195,8 @@ def test_mlp(
         layer_sizes,
         dataset,
         use_bias,
+        initial_params,
+        use_initial_params,
         random_seed=1234):
     """
     The dataset is the one from the mlp demo on deeplearning.net.  This training
@@ -228,11 +246,20 @@ def test_mlp(
     rng = np.random.RandomState(random_seed)
 
     # construct the MLP class
-    classifier = MLP(rng=rng, input=x,
-                     layer_sizes=layer_sizes,
-                     dropout_rates=dropout_rates,
-                     activations=activations,
-                     use_bias=use_bias)
+    if use_initial_params :
+        classifier = MLP(rng=rng, input=x,
+                         layer_sizes=layer_sizes,
+                         dropout_rates=dropout_rates,
+                         activations=activations,
+                         use_bias=use_bias,
+                         initial_params=initial_params,
+                         use_initial_params=use_initial_params)
+    else :
+        classifier = MLP(rng=rng, input=x,
+                         layer_sizes=layer_sizes,
+                         dropout_rates=dropout_rates,
+                         activations=activations,
+                         use_bias=use_bias)
 
     # Build the expresson for the cost function.
     #cost = classifier.negative_log_likelihood(y_matrix, batch_size)
@@ -273,51 +300,11 @@ def test_mlp(
             dtype=theano.config.floatX))
         gparams_mom.append(gparam_mom)
 
-    # Compute momentum for the current epoch
-    #mom = ifelse(epoch < mom_epoch_interval,
-    #        mom_start*(1.0 - epoch/mom_epoch_interval) + mom_end*(epoch/mom_epoch_interval),
-    #        mom_end)
-
     # Update the step direction using momentum
     updates = [
             (param, param - learning_rate * gparam)
             for param, gparam in zip(classifier.params, gparams)
     ]
-    #updates = OrderedDict()
-    #for gparam_mom, gparam in zip(gparams_mom, gparams):
-    #    # Misha Denil's original version
-    #    #updates[gparam_mom] = mom * gparam_mom + (1. - mom) * gparam
-    #  
-    #    # change the update rule to match Hinton's dropout paper
-    #    updates[gparam_mom] = mom * gparam_mom - (1. - mom) * learning_rate * gparam
-
-    ## ... and take a step along that direction
-    #for param, gparam_mom in zip(classifier.params, gparams_mom):
-    #    # Misha Denil's original version
-    #    #stepped_param = param - learning_rate * updates[gparam_mom]
-    #    
-    #    # since we have included learning_rate in gparam_mom, we don't need it
-    #    # here
-    #    stepped_param = param + updates[gparam_mom]
-
-    #    # This is a silly hack to constrain the norms of the rows of the weight
-    #    # matrices.  This just checks if there are two dimensions to the
-    #    # parameter and constrains it if so... maybe this is a bit silly but it
-    #    # should work for now.
-    #    if param.get_value(borrow=True).ndim == 2:
-    #        #squared_norms = T.sum(stepped_param**2, axis=1).reshape((stepped_param.shape[0],1))
-    #        #scale = T.clip(T.sqrt(squared_filter_length_limit / squared_norms), 0., 1.)
-    #        #updates[param] = stepped_param * scale
-    #        
-    #        # constrain the norms of the COLUMNs of the weight, according to
-    #        # https://github.com/BVLC/caffe/issues/109
-    #        col_norms = T.sqrt(T.sum(T.sqr(stepped_param), axis=0))
-    #        desired_norms = T.clip(col_norms, 0, T.sqrt(squared_filter_length_limit))
-    #        scale = desired_norms / (1e-7 + col_norms)
-    #        updates[param] = stepped_param * scale
-    #    else:
-    #        updates[param] = stepped_param
-
 
     # Compile theano function for training.  This returns the training cost and
     # updates the model parameters.
@@ -354,9 +341,13 @@ def test_mlp(
     while epoch_counter < n_epochs:
         # Train this epoch
         epoch_counter = epoch_counter + 1
+
+        if (epoch_counter % 10000) == 0 :
+            params = [classifier.params[0].get_value(), classifier.params[1].get_value(), classifier.params[2].get_value()]
+            sio.savemat('initial_params', {'epochs':epoch_counter, 'params':params})
+
         for minibatch_index in xrange(n_train_batches):
             minibatch_avg_cost = train_model(minibatch_index)
-
         # Compute loss on validation set
         test_losses = [test_model(i) for i in xrange(n_test_batches)]
         train_losses = [train_error_model(i) for i in xrange(n_train_batches)]
@@ -382,13 +373,14 @@ def test_mlp(
         #new_learning_rate = decay_learning_rate()
 
     end_time = time.time()
+    params = [classifier.params[0].get_value(), classifier.params[1].get_value(), classifier.params[2].get_value()]
     print(('Optimization complete. Best test score of %f %% '
            'obtained at iteration %i') %
           (best_test_errors * 100., best_iter))
     print >> sys.stderr, ('The code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
-    sio.savemat(results_file_name, {'error_matrix':error_matrix, 'best_test_errors':best_test_errors * 100., 'best_iter':best_iter, 'elapsed_time':(end_time - start_time) / 60.})
+    sio.savemat(results_file_name, {'learning_rate':initial_learning_rate, 'layer_sizes':layer_sizes, 'dropout_rates':dropout_rates, 'batch_size':batch_size, 'bias':use_bias, 'epochs':n_epochs, 'error_matrix':error_matrix, 'best_test_errors':best_test_errors * 100., 'best_iter':best_iter, 'elapsed_time':(end_time - start_time) / 60., 'params':params})
 
 
 if __name__ == '__main__':
@@ -402,7 +394,7 @@ if __name__ == '__main__':
     initial_learning_rate = 0.5
     learning_rate_decay = 0.998
     squared_filter_length_limit = 15.0
-    n_epochs = 20000
+    n_epochs = 5
     batch_size = 100
     layer_sizes = [ 647, 500, 30 ]
     dropout_hidden_rate = np.float64(sys.argv[3])
@@ -425,7 +417,8 @@ if __name__ == '__main__':
                   "interval": mom_epoch_interval}
                   
     dataset = 'VisionHogFeatures.mat'
-    #dataset = 'data/mnist.pkl.gz'
+    params_dataset = 'initial_params__.mat'
+    initial_params = load_initial_params_data(params_dataset);
     results_file_name = sys.argv[2]
 
     if len(sys.argv) < 4:
@@ -443,7 +436,6 @@ if __name__ == '__main__':
     else:
         print "I don't know how to '{0}'".format(sys.argv[1])
         exit(1)
-    
 
     test_mlp(initial_learning_rate=initial_learning_rate,
              learning_rate_decay=learning_rate_decay,
@@ -458,5 +450,7 @@ if __name__ == '__main__':
              dataset=dataset,
              results_file_name=results_file_name,
              use_bias=False,
+             initial_params=initial_params,
+             use_initial_params=False,
              random_seed=random_seed)
 

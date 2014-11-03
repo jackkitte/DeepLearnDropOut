@@ -54,6 +54,30 @@ def load_mnist(path):
             (test_set_x, test_set_y)]
     return rval
 
+def load_initial_params_data(dataset):
+
+    #############
+    # LOAD DATA #
+    #############
+
+    # Download the MNIST dataset if it is not present
+    data_dir, data_file = os.path.split(dataset)
+    if data_dir == "" and not os.path.isfile(dataset):
+        new_path = os.path.join(os.path.split(__file__)[0], "data", dataset)
+        if os.path.isfile(new_path) or data_file == "VisionHogFeatures.mat":
+            dataset = new_path
+
+    print '... loading data'
+
+    mat = sio.loadmat(dataset)
+    mats = mat.values()
+    epochs = mats[0]
+    param1 = theano.shared(np.asarray(mats[2][0,0], dtype=theano.config.floatX))
+    param2 = theano.shared(np.asarray(mats[2][0,1], dtype=theano.config.floatX))
+    params = [param1, param2]
+
+    return params
+
 
 def load_umontreal_data(dataset):
     ''' Loads the dataset
