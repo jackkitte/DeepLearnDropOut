@@ -394,7 +394,7 @@ if __name__ == '__main__':
     initial_learning_rate = 0.5
     learning_rate_decay = 0.998
     squared_filter_length_limit = 15.0
-    n_epochs = 5
+    n_epochs = 50000
     batch_size = 100
     layer_sizes = [ 647, 500, 30 ]
     dropout_hidden_rate = np.float64(sys.argv[3])
