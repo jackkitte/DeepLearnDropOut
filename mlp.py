@@ -417,7 +417,7 @@ if __name__ == '__main__':
                   "interval": mom_epoch_interval}
                   
     dataset = 'VisionHogFeatures.mat'
-    params_dataset = 'initial_params__.mat'
+    params_dataset = 'initial_params0_1.mat'
     initial_params = load_initial_params_data(params_dataset);
     results_file_name = sys.argv[2]
 
@@ -451,6 +451,6 @@ if __name__ == '__main__':
              results_file_name=results_file_name,
              use_bias=False,
              initial_params=initial_params,
-             use_initial_params=False,
+             use_initial_params=True,
              random_seed=random_seed)
 
