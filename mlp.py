@@ -334,7 +334,7 @@ def test_mlp(
     best_test_errors = np.inf
     best_iter = 0
     epoch_counter = 0
-    check_size = 2.
+    check_size = 500.
     dropout_change = np.zeros([(n_epochs / check_size) - 2, 2])
     dropout_check = 0
     start_time = time.time()
@@ -369,9 +369,9 @@ def test_mlp(
 
         if ((2 * check_size) < epoch_counter) and (np.mod(epoch_counter, check_size) == 0) : 
             costrate = np.average(error_matrix[epoch_counter - check_size : epoch_counter, 3]) / np.average(error_matrix[epoch_counter - (2 * check_size) : epoch_counter - check_size, 3])
-            if (1 - costrate) < 0.05 :
+            if (1 - costrate) < 0.01 :
                 if 0.1 < dropout_rates[1] :
-                    change_dropout_rate = dropout_rates[1] - 0.05
+                    change_dropout_rate = dropout_rates[1] - 0.1
                     dropout_rates[1] = change_dropout_rate
                     dropout_change[dropout_check] = epoch_counter, dropout_rates[1]
                     dropout_check += 1
@@ -413,7 +413,7 @@ if __name__ == '__main__':
     initial_learning_rate = 0.5
     learning_rate_decay = 0.998
     squared_filter_length_limit = 15.0
-    n_epochs = 300
+    n_epochs = 15000
     batch_size = 100
     layer_sizes = [ 647, 500, 30 ]
     dropout_hidden_rate = np.float64(sys.argv[3])
