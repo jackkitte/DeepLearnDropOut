@@ -367,11 +367,11 @@ def test_mlp(
                 " **" if this_test_errors < best_test_errors else "")
         error_matrix[epoch_counter - 1] = epoch_counter, this_train_errors, this_test_errors, minibatch_avg_cost 
 
-        if (2 * check_size) < (epoch_counter + 1) and np.mod(epoch_counter + 1, check_size) == 0 : 
-            costrate = np.average(error_matrix[(epoch_counter + 1) - check_size : epoch_counter + 1, 3]) / np.average(error_matrix[(epoch_counter + 1) - (2 * check_size) : (epoch_counter + 1) - check_size, 3])
+        if ((2 * check_size) < epoch_counter) and (np.mod(epoch_counter, check_size) == 0) : 
+            costrate = np.average(error_matrix[epoch_counter - check_size : epoch_counter, 3]) / np.average(error_matrix[epoch_counter - (2 * check_size) : epoch_counter - check_size, 3])
             if (1 - costrate) < 0.5 :
                 if 0.1 < dropout_rates[1] :
-                    change_dropout_rate = dropout_rates[1] - 0.05
+                    change_dropout_rate = dropout_rates[1] - 0.2
                     dropout_rates[1] = change_dropout_rate
                     dropout_change[dropout_check] = epoch_counter, dropout_rates[1]
                     dropout_check += 1
