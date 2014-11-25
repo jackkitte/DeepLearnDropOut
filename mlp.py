@@ -334,6 +334,9 @@ def test_mlp(
     best_test_errors = np.inf
     best_iter = 0
     epoch_counter = 0
+    check_size = 5.
+    dropout_change = np.zeros([(n_epochs / check_size) - 2, 2])
+    dropout_check = 0
     start_time = time.time()
     error_matrix = np.zeros([n_epochs, 4])
 
@@ -364,6 +367,18 @@ def test_mlp(
                 " **" if this_test_errors < best_test_errors else "")
         error_matrix[epoch_counter - 1] = epoch_counter, this_train_errors, this_test_errors, minibatch_avg_cost 
 
+        if (2 * check_size) < (epoch_counter + 1) and np.mod(epoch_counter + 1, check_size) == 0 : 
+            costrate = np.average(error_matrix[(epoch_counter + 1) - check_size : epoch_counter + 1, 3]) / np.average(error_matrix[(epoch_counter + 1) - (2 * check_size) : (epoch_counter + 1) - check_size, 3])
+            if (1 - costrate) < 0.5 :
+                if 0.1 < dropout_rates[1] :
+                    change_dropout_rate = dropout_rates[1] - 0.05
+                    dropout_rates[1] = change_dropout_rate
+                    dropout_change[dropout_check] = epoch_counter, dropout_rates[1]
+                    dropout_check += 1
+            else :
+                dropout_change[dropout_check] = epoch_counter, dropout_rates[1]
+                dropout_check += 1
+
         if this_test_errors < best_test_errors :
             best_test_errors = this_test_errors
             best_iter = epoch_counter
@@ -381,7 +396,7 @@ def test_mlp(
     print >> sys.stderr, ('The code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
-    sio.savemat(results_file_name, {'learning_rate':initial_learning_rate, 'layer_sizes':layer_sizes, 'dropout_rates':dropout_rates, 'batch_size':batch_size, 'bias':use_bias, 'epochs':n_epochs, 'error_matrix':error_matrix, 'best_test_errors':best_test_errors * 100., 'best_iter':best_iter, 'elapsed_time':(end_time - start_time) / 60., 'params':params})
+    sio.savemat(results_file_name, {'learning_rate':initial_learning_rate, 'layer_sizes':layer_sizes, 'dropout_rates':dropout_rates, 'batch_size':batch_size, 'bias':use_bias, 'epochs':n_epochs, 'error_matrix':error_matrix, 'dropout_change':dropout_change, 'best_test_errors':best_test_errors * 100., 'best_iter':best_iter, 'elapsed_time':(end_time - start_time) / 60., 'params':params})
 
 
 if __name__ == '__main__':
@@ -395,7 +410,7 @@ if __name__ == '__main__':
     initial_learning_rate = 0.5
     learning_rate_decay = 0.998
     squared_filter_length_limit = 15.0
-    n_epochs = 50000
+    n_epochs = 50
     batch_size = 100
     layer_sizes = [ 647, 500, 30 ]
     dropout_hidden_rate = np.float64(sys.argv[3])
