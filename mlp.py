@@ -1,4 +1,4 @@
-# DropOut用DeepLearningプログラム
+# DeepLearning with DropOut
 import numpy as np
 import scipy.io as sio
 import cPickle
@@ -334,7 +334,7 @@ def test_mlp(
     best_test_errors = np.inf
     best_iter = 0
     epoch_counter = 0
-    check_size = 5.
+    check_size = 2.
     dropout_change = np.zeros([(n_epochs / check_size) - 2, 2])
     dropout_check = 0
     start_time = time.time()
@@ -410,7 +410,7 @@ if __name__ == '__main__':
     initial_learning_rate = 0.5
     learning_rate_decay = 0.998
     squared_filter_length_limit = 15.0
-    n_epochs = 50
+    n_epochs = 20
     batch_size = 100
     layer_sizes = [ 647, 500, 30 ]
     dropout_hidden_rate = np.float64(sys.argv[3])
@@ -433,7 +433,7 @@ if __name__ == '__main__':
                   "interval": mom_epoch_interval}
                   
     dataset = 'VisionHogFeatures.mat'
-    params_dataset = 'initial_params0_1.mat'
+    params_dataset = 'initial_params__.mat'
     initial_params = load_initial_params_data(params_dataset);
     results_file_name = sys.argv[2]
 
@@ -467,6 +467,6 @@ if __name__ == '__main__':
              results_file_name=results_file_name,
              use_bias=False,
              initial_params=initial_params,
-             use_initial_params=True,
+             use_initial_params=False,
              random_seed=random_seed)
 
